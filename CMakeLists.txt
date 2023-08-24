@@ -55,7 +55,7 @@ include (Packager)
 message(STATUS "Looking for Hyperscan")
 find_path(HYPERSCAN_INCLUDE_DIR NAMES hs/hs.h)
 find_library(HYPERSCAN_LIB1 NAMES hs)
-find_library(HYPERSCAN_LIB2 NAMES hs_runtime)
+#find_library(HYPERSCAN_LIB2 NAMES hs_runtime)
 set (HYPERSCAN_LIB ${HYPERSCAN_LIB1} ${HYPERSCAN_LIB2})
 if(HYPERSCAN_INCLUDE_DIR AND HYPERSCAN_LIB)
   include_directories(${HYPERSCAN_INCLUDE_DIR})
@@ -64,9 +64,10 @@ else()
   message(WARNING "-- Hyperscan not found")
 endif()
 
-find_package(VPP REQUIRED)
+#find_package(VPP REQUIRED)
 
-include_directories(${VPP_INCLUDE_DIR})
+include_directories(${VPP_HOME}/include)
+include_directories(${VPP_HOME}/../../../src)
 
 set(UPF_PLUGIN_SOURCES
   upf/upf.c
