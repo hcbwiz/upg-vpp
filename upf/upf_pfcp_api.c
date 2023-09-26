@@ -2236,13 +2236,13 @@ report_usage_ev (upf_session_t * sess, ip46_address_t * ue, upf_urr_t * urr,
   pfcp_usage_report_t *r;
   urr_volume_t volume;
   u64 start_time, duration;
+  rte_mcslock_t ml;
+
   f64 vnow = vlib_time_now (psm->vlib_main);
 
   ASSERT (report);
 
-#ifdef UPF_FLOW_SESSION_SPINLOCK
-  clib_spinlock_lock (&sess->lock);
-#endif
+  rte_mcslock_lock (&sess->mcs_lock, &ml);
 
   volume = urr->volume;
   memset (&urr->volume.measure.packets, 0,
@@ -2269,9 +2269,7 @@ report_usage_ev (upf_session_t * sess, ip46_address_t * ue, upf_urr_t * urr,
       urr->status |= URR_AFTER_MONITORING_TIME;
     }
 
-#ifdef UPF_FLOW_SESSION_SPINLOCK
-  clib_spinlock_unlock (&sess->lock);
-#endif
+  rte_mcslock_unlock (&sess->mcs_lock, &ml);
 
   if (urr->status & URR_AFTER_MONITORING_TIME)
     {

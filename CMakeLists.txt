@@ -68,6 +68,7 @@ endif()
 
 include_directories(${VPP_HOME}/include)
 include_directories(${VPP_HOME}/../../../src)
+include_directories(/opt/vpp/external/x86_64/include)
 
 set(UPF_PLUGIN_SOURCES
   upf/upf.c

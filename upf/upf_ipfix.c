@@ -634,12 +634,11 @@ upf_ensure_ref_ipfix_info (upf_ipfix_info_key_t *key)
   fib_table_t *ingress_table, *egress_table;
   upf_ipfix_context_key_t context_key;
   upf_nwi_t *nwi = 0;
+  rte_mcslock_t ml;
 
   clib_memcpy_fast (&kv.key, key, sizeof (kv.key));
 
-#ifdef UPF_FLOW_SESSION_SPINLOCK
-  clib_spinlock_lock (&fm->lock);
-#endif
+  rte_mcslock_lock(&fm->mcs_lock, &ml);
 
   if (PREDICT_TRUE
       (!clib_bihash_search_24_8
@@ -727,9 +726,7 @@ upf_ensure_ref_ipfix_info (upf_ipfix_info_key_t *key)
   clib_bihash_add_del_24_8 (&fm->info_by_key, &kv, 1);
 
  done:
-#ifdef UPF_FLOW_SESSION_SPINLOCK
-  clib_spinlock_unlock (&fm->lock);
-#endif
+  rte_mcslock_unlock (&fm->mcs_lock, &ml);
   return idx;
 }
 
@@ -739,17 +736,13 @@ upf_unref_ipfix_info (u32 iidx)
   upf_ipfix_main_t *fm = &upf_ipfix_main;
   clib_bihash_kv_24_8_t kv;
   upf_ipfix_info_t *info;
+  rte_mcslock_t ml;
 
-#ifdef UPF_FLOW_SESSION_SPINLOCK
-  clib_spinlock_lock (&fm->lock);
-#endif
+  rte_mcslock_lock (&fm->mcs_lock, &ml);
+
   info = pool_elt_at_index (fm->infos, iidx);
   if (clib_atomic_sub_fetch (&info->refcnt, 1))
-#ifdef UPF_FLOW_SESSION_SPINLOCK
     goto done;
-#else
-    return;
-#endif
 
   clib_memcpy_fast (&kv.key, &info->key, sizeof (kv.key));
   clib_bihash_add_del_24_8 (&fm->info_by_key, &kv, 0 /* is_add */ );
@@ -760,10 +753,8 @@ upf_unref_ipfix_info (u32 iidx)
   vec_free (info->observation_domain_name);
   vec_free (info->interface_name);
 
-#ifdef UPF_FLOW_SESSION_SPINLOCK
  done:
-  clib_spinlock_unlock (&fm->lock);
-#endif
+  rte_mcslock_unlock (&fm->mcs_lock, &ml);
 }
 
 /**
@@ -777,8 +768,6 @@ upf_ipfix_init (vlib_main_t * vm)
   upf_ipfix_main_t *fm = &upf_ipfix_main;
   flowtable_main_t *_fm = &flowtable_main;
   clib_error_t *error = 0;
-
-  clib_spinlock_init (&fm->lock);
 
   fm->vnet_main = vnet_get_main ();
   fm->vlib_main = vm; /* FIXME: shouldn't need that */

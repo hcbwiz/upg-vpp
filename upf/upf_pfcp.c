@@ -595,8 +595,6 @@ pfcp_create_session (upf_node_assoc_t * assoc,
 
   sx->unix_time_start = psm->now;
 
-  clib_spinlock_init (&sx->lock);
-
   //TODO sx->up_f_seid = sx - gtm->sessions;
   node_assoc_attach_session (assoc, sx);
   hash_set (gtm->session_by_id, cp_seid, sx - gtm->sessions);
@@ -891,15 +889,14 @@ pfcp_make_pending_urr (upf_session_t * sx)
   struct rules *pending = pfcp_get_rules (sx, PFCP_PENDING);
   struct rules *active = pfcp_get_rules (sx, PFCP_ACTIVE);
   upf_urr_t *urr;
+  rte_mcslock_t ml;
 
   if (pending->urr)
     return 0;
 
   if (active->urr)
     {
-#ifdef UPF_FLOW_SESSION_SPINLOCK
-      clib_spinlock_lock (&sx->lock);
-#endif
+      rte_mcslock_lock (&sx->mcs_lock, &ml);
 
       pending->urr = vec_dup (active->urr);
       vec_foreach (urr, pending->urr)
@@ -912,9 +909,7 @@ pfcp_make_pending_urr (upf_session_t * sx)
 	memset (&urr->volume.measure, 0, sizeof (urr->volume.measure));
       }
 
-#ifdef UPF_FLOW_SESSION_SPINLOCK
-      clib_spinlock_unlock (&sx->lock);
-#endif
+      rte_mcslock_unlock (&sx->mcs_lock, &ml);
     }
 
   return 0;
@@ -1175,7 +1170,6 @@ pfcp_free_session (upf_session_t * sx)
 
   free_user_id (&sx->user_id);
 
-  clib_spinlock_free (&sx->lock);
   pool_put (gtm->sessions, sx);
 
   vlib_worker_thread_barrier_release (vm);
@@ -2132,9 +2126,8 @@ pfcp_update_apply (upf_session_t * sx)
     pending->far = NULL;
   if (pending_urr)
     {
-#ifdef UPF_FLOW_SESSION_SPINLOCK
-      clib_spinlock_lock (&sx->lock);
-#endif
+      rte_mcslock_t ml;
+      rte_mcslock_lock (&sx->mcs_lock, &ml);
 
       /* copy rest traffic from old active (now pending) to current
        * new URR was initialized with zero, simply add the old values */
@@ -2186,9 +2179,7 @@ pfcp_update_apply (upf_session_t * sx)
 	  }
       }
 
-#ifdef UPF_FLOW_SESSION_SPINLOCK
-      clib_spinlock_unlock (&sx->lock);
-#endif
+      rte_mcslock_unlock (&sx->mcs_lock, &ml);
     }
   else
     pending->urr = NULL;
@@ -2384,12 +2375,11 @@ process_urrs (vlib_main_t * vm, upf_session_t * sess,
   u8 status = URR_OK;
   u16 *urr_id;
   bool ret = true;
+  rte_mcslock_t ml;
 
   upf_debug ("DL: %d, UL: %d\n", is_dl, is_ul);
 
-#ifdef UPF_FLOW_SESSION_SPINLOCK
-  clib_spinlock_lock (&sess->lock);
-#endif
+  rte_mcslock_lock (&sess->mcs_lock, &ml);
 
   if (is_ul)
     sess->last_ul_traffic = now;
@@ -2569,9 +2559,7 @@ process_urrs (vlib_main_t * vm, upf_session_t * sess,
     status |= r;
   }
 
-#ifdef UPF_FLOW_SESSION_SPINLOCK
-  clib_spinlock_unlock (&sess->lock);
-#endif
+  rte_mcslock_unlock (&sess->mcs_lock, &ml);
 
   if (PREDICT_FALSE (status != URR_OK))
     {
