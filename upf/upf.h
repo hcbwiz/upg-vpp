@@ -43,6 +43,12 @@
 #include <vlib/vlib.h>
 #include <vlib/log.h>
 
+#ifdef always_inline
+#undef always_inline
+#define always_inline __rte_always_inline
+#endif
+#include <rte_mcslock.h>
+
 #include "pfcp.h"
 #include "flowtable.h"
 
@@ -735,7 +741,7 @@ typedef struct
   CLIB_CACHE_LINE_ALIGN_MARK (cacheline0);
 
   /* most updated fields first */
-  clib_spinlock_t lock;
+  rte_mcslock_t *mcs_lock;
   f64 last_ul_traffic;
 
   ip46_address_t up_address;

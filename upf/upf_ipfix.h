@@ -12,6 +12,9 @@
 #include <vnet/ipfix-export/flow_report_classify.h>
 #include <vppinfra/tw_timer_2t_1w_2048sl.h>
 
+#include <rte_common.h>
+#include <rte_mcslock.h>
+
 #include "flowtable.h"
 
 #define FLOW_MAXIMUM_EXPORT_ENTRIES	(1024)
@@ -103,7 +106,7 @@ typedef struct
  */
 typedef struct
 {
-  clib_spinlock_t lock;
+  rte_mcslock_t *mcs_lock;
   clib_bihash_24_8_t context_by_key;
   clib_bihash_24_8_t info_by_key;
   upf_ipfix_protocol_context_t *contexts;

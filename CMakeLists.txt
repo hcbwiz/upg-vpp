@@ -67,6 +67,7 @@ endif()
 find_package(VPP REQUIRED)
 
 include_directories(${VPP_INCLUDE_DIR})
+include_directories(/opt/vpp/external/x86_64/include)
 
 set(UPF_PLUGIN_SOURCES
   upf/upf.c
