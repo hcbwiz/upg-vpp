@@ -368,6 +368,7 @@ handle_association_setup_request (pfcp_msg_t * msg, pfcp_decoded_msg_t * dmsg)
     pfcp_new_association (msg->session_handle,
 			  &msg->lcl.address, &msg->rmt.address,
 			  &req->request.node_id);
+
   n->recovery_time_stamp = req->recovery_time_stamp;
 
   UPF_SET_BIT (resp->grp.fields,
@@ -2489,6 +2490,213 @@ handle_session_set_deletion_response (pfcp_msg_t * msg,
 {
   return -1;
 }
+
+#if 1
+static int fake_session_establishment_request(int count)
+{
+	upf_session_t *sess;
+	upf_node_assoc_t *assoc;
+	pfcp_session_procedure_response_t resp;
+	pfcp_outer_header_creation_t *ohc;
+	pfcp_node_id_t node_id = { 0 };
+	pfcp_create_pdr_t *create_pdr = NULL, *pdr1, *pdr2;
+	pfcp_create_far_t *create_far = NULL, *far1, *far2;
+	ip46_address_t up_address = ip46_address_initializer;
+	ip46_address_t cp_address = ip46_address_initializer;
+	static bool create_fake_node = true;
+	int r = -1;
+	u8* network_instance = NULL, *default_dn = NULL;
+	const char* ni_str = "internet2";
+	const char* default_dn_str = "defaultDN";
+	int len = strlen(ni_str);
+
+	int ip_step = 4;
+	static u32 ue_ip = 0x0a000001; //10.0.0.1
+	static u64 seid = 100001;
+
+	//the N3 IP of UPF
+	u32 local_n3 = 0x1e1e1e0a; //30.30.30.10
+	//the N3 IP of remote peer
+	u32 remote_n3 = 0x1e1e1e02; //30.30.30.2
+
+	//the N4 IP of UPF
+	up_address.ip4.as_u32 = clib_host_to_net_u32(0x2828280a); //40.40.40.10
+	//the N4 IP of remote peer
+	cp_address.ip4.as_u32 = clib_host_to_net_u32(0x28282802); //40.40.40.2
+
+
+	node_id.type = NID_IPv4;
+	node_id.ip.ip4 = cp_address.ip4;
+
+	if (create_fake_node)
+	{
+		create_fake_node = false;
+		assoc = pfcp_new_association (0, &up_address, &cp_address, &node_id);
+	}
+
+	assoc = pfcp_get_association (&node_id);
+	if (!assoc)
+	{
+		fprintf(stderr, "no established PFCP association: %x\n", node_id.ip.ip4.as_u32);
+		goto err;
+	}
+
+	network_instance = vec_new(u8, len+1);
+	network_instance[0] = len; //need to check this.
+	memcpy(network_instance+1, ni_str, len);
+
+	vec_alloc(create_pdr, 2);
+
+	//DL PDR
+	vec_add2(create_pdr, pdr1, 1);
+	memset(pdr1, 0, sizeof(*pdr1));
+	pdr1->pdr_id = 1;
+	pdr1->precedence = 255;
+	UPF_SET_BIT(pdr1->pdi.grp.fields, PDI_NETWORK_INSTANCE);
+	pdr1->pdi.network_instance = network_instance;
+	pdr1->pdi.source_interface = 1; //Core
+	UPF_SET_BIT(pdr1->pdi.grp.fields, PDI_UE_IP_ADDRESS);
+	pdr1->pdi.ue_ip_address.flags = IE_UE_IP_ADDRESS_V4 | IE_UE_IP_ADDRESS_SD;
+	//pdr1->pdi.ue_ip_address.ip4.as_u32 = clib_host_to_net_u32(ue_ip);
+	UPF_SET_BIT(pdr1->grp.fields, CREATE_PDR_FAR_ID);
+	pdr1->far_id = 1;
+
+	//UL PDR
+	vec_add2(create_pdr, pdr2, 1);
+	memset(pdr2, 0, sizeof(*pdr2));
+	pdr2->pdr_id = 2;
+	pdr2->precedence = 255;
+	UPF_SET_BIT(pdr2->pdi.grp.fields, PDI_NETWORK_INSTANCE);
+	pdr2->pdi.network_instance = network_instance;
+	pdr2->pdi.source_interface = 0; //Access
+	UPF_SET_BIT(pdr2->pdi.grp.fields, PDI_F_TEID);
+	//pdr2->pdi.f_teid.flags = (F_TEID_CH | F_TEID_CHID | F_TEID_V4);
+	//pdr2->pdi.f_teid.choose_id = 5;
+	pdr2->pdi.f_teid.flags = F_TEID_V4;
+	pdr2->pdi.f_teid.ip4.as_u32 = clib_host_to_net_u32(local_n3); //the N3 IP of UPF.
+	//pdr2->pdi.f_teid.teid = (u32) seid;
+	UPF_SET_BIT(pdr2->pdi.grp.fields, PDI_UE_IP_ADDRESS);
+	pdr2->pdi.ue_ip_address.flags = IE_UE_IP_ADDRESS_V4;
+	//pdr2->pdi.ue_ip_address.ip4.as_u32 = clib_host_to_net_u32(ue_ip);
+	UPF_SET_BIT(pdr2->grp.fields, CREATE_PDR_OUTER_HEADER_REMOVAL);
+	//pdr->outer_header_removal = 0;
+	UPF_SET_BIT(pdr2->grp.fields, CREATE_PDR_FAR_ID);
+	pdr2->far_id = 2;
+
+	vec_alloc(create_far, 2);
+
+	vec_add2(create_far, far1, 1);
+	memset(far1, 0, sizeof(*far1));
+	far1->far_id = 1;
+	far1->apply_action = FAR_FORWARD;
+	UPF_SET_BIT(far1->grp.fields, CREATE_FAR_FORWARDING_PARAMETERS);
+	UPF_SET_BIT(far1->forwarding_parameters.grp.fields, FORWARDING_PARAMETERS_NETWORK_INSTANCE);
+	far1->forwarding_parameters.network_instance = network_instance;
+	far1->forwarding_parameters.destination_interface = 0; //Access
+	UPF_SET_BIT(far1->forwarding_parameters.grp.fields, FORWARDING_PARAMETERS_OUTER_HEADER_CREATION);
+	ohc = &far1->forwarding_parameters.outer_header_creation;
+	ohc->description = OUTER_HEADER_CREATION_GTP_IP4;
+	//ohc->teid = (u32) seid;
+	ohc->ip.ip4.as_u32 = clib_host_to_net_u32(remote_n3); //the remote peer of N3.
+
+	vec_add2(create_far, far2, 1);
+	memset(far2, 0, sizeof(*far2));
+	far2->far_id = 2;
+	far2->apply_action = FAR_FORWARD;
+	UPF_SET_BIT(far2->grp.fields, CREATE_FAR_FORWARDING_PARAMETERS);
+	UPF_SET_BIT(far2->forwarding_parameters.grp.fields, FORWARDING_PARAMETERS_NETWORK_INSTANCE);
+	far2->forwarding_parameters.network_instance = network_instance;
+	far2->forwarding_parameters.destination_interface = 1; //Core
+							       //
+	len = strlen(default_dn_str);
+	default_dn = vec_new(u8, len);
+	memcpy(default_dn, default_dn_str, len);
+	//test "forward policy"
+#if 0
+	UPF_SET_BIT(far2->forwarding_parameters.grp.fields, FORWARDING_PARAMETERS_FORWARDING_POLICY);
+	far2->forwarding_parameters.forwarding_policy.identifier = default_dn;
+#endif
+
+	for (int i = 0; i < count; ++i, ++seid, ue_ip += ip_step)
+	{
+		sess = pfcp_create_session (assoc, &up_address, seid, &cp_address);
+
+		pdr1->pdi.ue_ip_address.ip4.as_u32 = clib_host_to_net_u32(ue_ip);
+		pdr2->pdi.ue_ip_address.ip4.as_u32 = clib_host_to_net_u32(ue_ip);
+		pdr2->pdi.f_teid.teid = (u32) seid;
+
+		memset (&resp, 0, sizeof (resp));
+		resp.up_f_seid.flags |= IE_F_SEID_IP_ADDRESS_V4;
+		resp.up_f_seid.ip4 = up_address.ip4;
+
+		r = handle_create_pdr(sess, create_pdr, &resp);
+		if (r) {
+			fprintf(stderr, "create pdr failed\n");
+			goto err;
+		}
+
+		//for DL FAR
+		ohc->teid = (u32)seid;
+
+		r = handle_create_far (sess, create_far, &resp);
+		if (r) {
+			fprintf(stderr, "create far failed\n");
+			goto err;
+		}
+
+		r = pfcp_update_apply (sess);
+		if (r) {
+			fprintf(stderr, "pfcp_update_apply failed\n");
+		}
+
+		pfcp_update_finish (sess);
+	}
+err:
+	vec_free(create_pdr);
+	vec_free(create_far);
+	vec_free(network_instance);
+	vec_free(default_dn);
+	return r;
+}
+
+static clib_error_t *
+upf_fake_session_command_fn (vlib_main_t * vm,
+                             unformat_input_t * main_input,
+                             vlib_cli_command_t * cmd)
+{
+	unformat_input_t _line_input, *line_input = &_line_input;
+	u32 count = 1;
+	clib_error_t *error = NULL;
+
+	if (unformat_user (main_input, unformat_line_input, line_input))
+	{
+		while (unformat_check_input (line_input) != (uword) UNFORMAT_END_OF_INPUT)
+		{
+			if (unformat (line_input, "%u", &count))
+				;
+			else
+			{
+				error = clib_error_create ("expected COUNT, got `%U'",
+						format_unformat_error, line_input);
+				goto done;
+			}
+		}
+	}
+
+	fake_session_establishment_request(count);
+
+done:
+	return error;
+}
+
+VLIB_CLI_COMMAND (upf_fake_session_command, static) =
+{
+  .path = "upf fake session",
+  .short_help =
+  "upf fake session [Count]",
+  .function = upf_fake_session_command_fn,
+};
+#endif
 
 static int
 handle_session_establishment_request (pfcp_msg_t * msg,
