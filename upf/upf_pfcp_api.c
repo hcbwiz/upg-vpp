@@ -367,6 +367,7 @@ handle_association_setup_request (pfcp_msg_t * msg, pfcp_decoded_msg_t * dmsg)
     pfcp_new_association (msg->session_handle,
 			  &msg->lcl.address, &msg->rmt.address,
 			  &req->request.node_id);
+
   n->recovery_time_stamp = req->recovery_time_stamp;
 
   SET_BIT (resp->grp.fields,
@@ -2501,24 +2502,35 @@ static int fake_session_establishment_request(int count)
 	pfcp_create_far_t *create_far = NULL, *far1, *far2;
 	ip46_address_t up_address = ip46_address_initializer;
 	ip46_address_t cp_address = ip46_address_initializer;
-	static u64 seid = 100000;
+	static bool create_fake_node = true;
 	int r = -1;
-	u8* network_instance = NULL;
+	u8* network_instance = NULL, *default_dn = NULL;
 	const char* ni_str = "internet2";
-	int ni_len = strlen(ni_str);
+	const char* default_dn_str = "defaultDN";
+	int len = strlen(ni_str);
 
 	static u32 ue_ip = 0x0a000000; //10.0.0.0
+	static u64 seid = 100000;
 
-	network_instance = vec_new(u8, ni_len+1);
-	network_instance[0] = ni_len; //need to check this.
-	memcpy(network_instance+1, ni_str, ni_len);
+	//the N3 IP of UPF
+	u32 local_n3 = 0x0a1e1e1e; //30.30.30.10
+	//the N3 IP of remote peer
+	u32 remote_n3 = 0x021e1e1e; //30.30.30.2
 
+	//the N4 IP of UPF
 	up_address.ip4.as_u32 = 0xa282828; //40.40.40.10
-	cp_address.ip4.as_u32 = 0x1282828; //40.40.40.1
+	//the N4 IP of remote peer
+	cp_address.ip4.as_u32 = 0x2282828; //40.40.40.2
 
 
 	node_id.type = NID_IPv4;
 	node_id.ip.ip4 = cp_address.ip4;
+
+	if (create_fake_node)
+	{
+		create_fake_node = false;
+		assoc = pfcp_new_association (0, &up_address, &cp_address, &node_id);
+	}
 
 	assoc = pfcp_get_association (&node_id);
 	if (!assoc)
@@ -2526,6 +2538,10 @@ static int fake_session_establishment_request(int count)
 		fprintf(stderr, "no established PFCP association: %x\n", node_id.ip.ip4.as_u32);
 		goto err;
 	}
+
+	network_instance = vec_new(u8, len+1);
+	network_instance[0] = len; //need to check this.
+	memcpy(network_instance+1, ni_str, len);
 
 	vec_alloc(create_pdr, 2);
 
@@ -2555,7 +2571,7 @@ static int fake_session_establishment_request(int count)
 	//pdr2->pdi.f_teid.flags = (F_TEID_CH | F_TEID_CHID | F_TEID_V4);
 	//pdr2->pdi.f_teid.choose_id = 5;
 	pdr2->pdi.f_teid.flags = F_TEID_V4;
-	pdr2->pdi.f_teid.ip4.as_u32 = 0x0a1e1e1e; //the N3 IP of UPF.
+	pdr2->pdi.f_teid.ip4.as_u32 = local_n3; //the N3 IP of UPF.
 	//pdr2->pdi.f_teid.teid = (u32) seid;
 	SET_BIT(pdr2->pdi.grp.fields, PDI_UE_IP_ADDRESS);
 	pdr2->pdi.ue_ip_address.flags = IE_UE_IP_ADDRESS_V4;
@@ -2579,7 +2595,7 @@ static int fake_session_establishment_request(int count)
 	ohc = &far1->forwarding_parameters.outer_header_creation;
 	ohc->description = OUTER_HEADER_CREATION_GTP_IP4;
 	//ohc->teid = (u32) seid;
-	ohc->ip.ip4.as_u32 = 0x21e1e1e; //the remote peer of N3.
+	ohc->ip.ip4.as_u32 = remote_n3; //the remote peer of N3.
 
 	vec_add2(create_far, far2, 1);
 	memset(far2, 0, sizeof(*far2));
@@ -2589,6 +2605,15 @@ static int fake_session_establishment_request(int count)
 	SET_BIT(far2->forwarding_parameters.grp.fields, FORWARDING_PARAMETERS_NETWORK_INSTANCE);
 	far2->forwarding_parameters.network_instance = network_instance;
 	far2->forwarding_parameters.destination_interface = 1; //Core
+							       //
+	len = strlen(default_dn_str);
+	default_dn = vec_new(u8, len);
+	memcpy(default_dn, default_dn_str, len);
+	//test "forward policy"
+#if 0
+	SET_BIT(far2->forwarding_parameters.grp.fields, FORWARDING_PARAMETERS_FORWARDING_POLICY);
+	far2->forwarding_parameters.forwarding_policy.identifier = default_dn;
+#endif
 
 	for (int i = 0; i < count; ++i)
 	{
@@ -2633,6 +2658,7 @@ err:
 	vec_free(create_pdr);
 	vec_free(create_far);
 	vec_free(network_instance);
+	vec_free(default_dn);
 	return r;
 }
 
