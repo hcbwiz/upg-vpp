@@ -2,6 +2,12 @@
 
 cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
 
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR aarch64)
+set(CMAKE_LIBRARY_ARCHITECTURE aarch64-linux-gnu)
+set(CMAKE_C_COMPILER /usr/bin/aarch64-linux-gnu-gcc)
+set(CMAKE_CXX_COMPILER /usr/bin/aarch64-linux-gnu-g++)
+
 set(CMAKE_C_COMPILER_NAMES
   clang-13
   clang-12
@@ -53,21 +59,22 @@ include (Packager)
 # endif()
 
 message(STATUS "Looking for Hyperscan")
-find_path(HYPERSCAN_INCLUDE_DIR NAMES hs/hs.h)
-find_library(HYPERSCAN_LIB1 NAMES hs)
-find_library(HYPERSCAN_LIB2 NAMES hs_runtime)
+find_path(HYPERSCAN_INCLUDE_DIR NAMES /hs/hs.h PATHS ${VECTORSCAN_DIR}/include)
+find_library(HYPERSCAN_LIB1 NAMES hs PATHS ${VECTORSCAN_DIR}/lib/aarch64-linux-gnu)
+#find_library(HYPERSCAN_LIB2 NAMES hs_runtime)
 set (HYPERSCAN_LIB ${HYPERSCAN_LIB1} ${HYPERSCAN_LIB2})
 if(HYPERSCAN_INCLUDE_DIR AND HYPERSCAN_LIB)
   include_directories(${HYPERSCAN_INCLUDE_DIR})
   message(STATUS "Found Hyperscan in ${HYPERSCAN_INCLUDE_DIR}")
 else()
+  message(WARNING "${VECTORSCAN_DIR}")
   message(WARNING "-- Hyperscan not found")
 endif()
 
 find_package(VPP REQUIRED)
 
 include_directories(${VPP_INCLUDE_DIR})
-include_directories(/opt/vpp/external/x86_64/include)
+include_directories(${DPDK_DIR}/include)
 
 set(UPF_PLUGIN_SOURCES
   upf/upf.c
@@ -158,7 +165,7 @@ endif (NOT CMAKE_BUILD_TYPE)
 SET(UPF_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR} CACHE STRING "upf_install_prefix")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
-   set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -Wall -march=corei7 -mtune=corei7-avx -O3 -g")
+   set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -Wall -O3 -g")
 elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -Wall -march=corei7 -mtune=corei7-avx -O0 -g")
    add_definitions(-DCLIB_DEBUG -DVLIB_BUFFER_TRACE_TRAJECTORY -fPIC -fstack-protector-all)
