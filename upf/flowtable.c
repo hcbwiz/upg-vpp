@@ -370,7 +370,7 @@ flowtable_entry_lookup_create (flowtable_main_t * fm,
   dlist_elt_t *timer_entry;
   upf_main_t *gtm = &upf_main;
 
-  if (PREDICT_FALSE
+  if (PREDICT_TRUE
       (clib_bihash_search_inline_48_8 (&fmt->flows_ht, kv) == 0))
     {
       return kv->value;
